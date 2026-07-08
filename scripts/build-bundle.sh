@@ -34,6 +34,7 @@ git -C "$work/src" checkout --detach "$SEARXNG_REF"
 echo "==> install into the standalone interpreter (relocatable, no venv)"
 "$py" -m pip install --disable-pip-version-check -q -U pip setuptools wheel
 "$py" -m pip install --disable-pip-version-check -q -r "$work/src/requirements.txt"
+"$py" -m pip install --disable-pip-version-check -q "granian==${GRANIAN_VERSION}"
 "$py" -m pip install --disable-pip-version-check -q --no-build-isolation "$work/src"
 
 echo "==> smoke test: WSGI app imports"

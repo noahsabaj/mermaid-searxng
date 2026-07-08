@@ -31,6 +31,7 @@ git -C "$work\src" checkout --detach $env:SEARXNG_REF; Assert-Ok "checkout searx
 Write-Host "==> install into the standalone interpreter"
 & $py -m pip install --disable-pip-version-check -q -U pip setuptools wheel; Assert-Ok "pip bootstrap"
 & $py -m pip install --disable-pip-version-check -q -r "$work\src\requirements.txt"; Assert-Ok "pip requirements"
+& $py -m pip install --disable-pip-version-check -q "granian==$($env:GRANIAN_VERSION)"; Assert-Ok "pip granian"
 & $py -m pip install --disable-pip-version-check -q --no-build-isolation "$work\src"; Assert-Ok "pip searx"
 
 Write-Host "==> smoke test: WSGI app imports"
