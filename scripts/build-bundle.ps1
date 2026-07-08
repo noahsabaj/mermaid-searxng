@@ -34,8 +34,23 @@ Write-Host "==> install into the standalone interpreter"
 & $py -m pip install --disable-pip-version-check -q "granian==$($env:GRANIAN_VERSION)"; Assert-Ok "pip granian"
 & $py -m pip install --disable-pip-version-check -q --no-build-isolation "$work\src"; Assert-Ok "pip searx"
 
-Write-Host "==> smoke test: WSGI app imports"
+Write-Host "==> smoke test: WSGI app imports (SearXNG refuses to load with the default secret_key)"
+$smoke = "$work\smoke-settings.yml"
+@"
+use_default_settings: true
+server:
+  secret_key: "build-smoke-test-not-shipped"
+  limiter: false
+search:
+  formats:
+    - html
+    - json
+valkey:
+  url: false
+"@ | Set-Content -Path $smoke -Encoding ascii
+$env:SEARXNG_SETTINGS_PATH = $smoke
 & $py -c "import granian, searx.webapp as w; assert hasattr(w, 'application')"; Assert-Ok "smoke import"
+Remove-Item Env:\SEARXNG_SETTINGS_PATH
 
 Write-Host "==> prune"
 $pylib = "$work\python\Lib"

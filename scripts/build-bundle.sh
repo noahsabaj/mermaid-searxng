@@ -37,8 +37,21 @@ echo "==> install into the standalone interpreter (relocatable, no venv)"
 "$py" -m pip install --disable-pip-version-check -q "granian==${GRANIAN_VERSION}"
 "$py" -m pip install --disable-pip-version-check -q --no-build-isolation "$work/src"
 
-echo "==> smoke test: WSGI app imports"
-"$py" -c "import granian, searx.webapp as w; assert hasattr(w, 'application'), 'missing searx.webapp:application'"
+echo "==> smoke test: WSGI app imports (SearXNG refuses to load with the default secret_key)"
+cat > "$work/smoke-settings.yml" <<'YAML'
+use_default_settings: true
+server:
+  secret_key: "build-smoke-test-not-shipped"
+  limiter: false
+search:
+  formats:
+    - html
+    - json
+valkey:
+  url: false
+YAML
+SEARXNG_SETTINGS_PATH="$work/smoke-settings.yml" \
+  "$py" -c "import granian, searx.webapp as w; assert hasattr(w, 'application'), 'missing searx.webapp:application'"
 
 echo "==> prune (test suite, GUI, build-only tools, static libs, caches)"
 pylib="$work/python/lib/python${CPYTHON_VERSION%.*}"
