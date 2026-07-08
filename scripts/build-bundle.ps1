@@ -25,11 +25,11 @@ tar.exe -C "$work" -xzf "$work\cpython.tar.gz"; Assert-Ok "extract CPython"   # 
 $py = "$work\python\python.exe"
 
 Write-Host "==> SearXNG @ $($env:SEARXNG_REF)"
-git clone --filter=blob:none --no-checkout https://github.com/searxng/searxng.git "$work\src"; Assert-Ok "clone searxng"
-# Only searx/ + root build files are needed for `pip install .`; skipping the rest
-# also avoids upstream paths with ':' that NTFS refuses to check out.
-git -C "$work\src" sparse-checkout set searx; Assert-Ok "sparse-checkout"
-git -C "$work\src" checkout --detach $env:SEARXNG_REF; Assert-Ok "checkout searxng ref"
+# Fetch as a tarball and extract everything except utils/, which holds upstream
+# paths containing ':' that NTFS cannot create. pip install . doesn't need utils/.
+New-Item -ItemType Directory -Path "$work\src" | Out-Null
+curl.exe -fsSL -o "$work\searxng-src.tar.gz" "https://codeload.github.com/searxng/searxng/tar.gz/$($env:SEARXNG_REF)"; Assert-Ok "download searxng"
+tar.exe -C "$work\src" --strip-components=1 -xzf "$work\searxng-src.tar.gz" --exclude='*/utils/*'; Assert-Ok "extract searxng"
 
 Write-Host "==> install into the standalone interpreter"
 & $py -m pip install --disable-pip-version-check -q -U pip setuptools wheel; Assert-Ok "pip bootstrap"

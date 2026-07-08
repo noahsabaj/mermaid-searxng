@@ -28,12 +28,14 @@ tar -C "$work" -xzf "$work/cpython.tar.gz"   # -> $work/python
 py="$work/python/bin/python3"
 
 echo "==> SearXNG @ ${SEARXNG_REF}"
-git clone --filter=blob:none --no-checkout https://github.com/searxng/searxng.git "$work/src"
-# Only the `searx/` package + root build files are needed for `pip install .`.
-# Skipping the rest also avoids upstream paths containing ':' (e.g.
-# utils/templates/.../searxng.conf:socket) that Windows/NTFS refuses to check out.
-git -C "$work/src" sparse-checkout set searx
-git -C "$work/src" checkout --detach "$SEARXNG_REF"
+# Fetch the source as a tarball and extract everything except utils/, which holds
+# upstream paths containing ':' (e.g. searxng.conf:socket) that Windows/NTFS
+# cannot create. `pip install .` needs searx/ + the root build files, not the
+# utils/ deployment templates. (git checkout of those paths fails on Windows.)
+mkdir -p "$work/src"
+curl -fsSL -o "$work/searxng-src.tar.gz" \
+  "https://codeload.github.com/searxng/searxng/tar.gz/${SEARXNG_REF}"
+tar -C "$work/src" --strip-components=1 -xzf "$work/searxng-src.tar.gz" --exclude='*/utils/*'
 
 echo "==> install into the standalone interpreter (relocatable, no venv)"
 "$py" -m pip install --disable-pip-version-check -q -U pip setuptools wheel
