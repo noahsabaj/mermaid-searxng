@@ -27,7 +27,11 @@ Podman, no VM.**
 | linux-aarch64 | `ubuntu-24.04-arm` | `mermaid-searxng-linux-aarch64.tar.zst` |
 | macos-x86_64 | `macos-13` | `mermaid-searxng-macos-x86_64.tar.zst` |
 | macos-aarch64 | `macos-14` | `mermaid-searxng-macos-aarch64.tar.zst` |
-| windows-x86_64 | `windows-latest` | `mermaid-searxng-windows-x86_64.zip` |
+
+There is no Windows bundle: SearXNG imports Unix-only modules (e.g. `pwd`, via its
+limiter/valkey code), so it cannot run on native Windows. Windows users point
+`search_backend = "searxng"` at their own `searxng_url` (a WSL or remote instance),
+or set `OLLAMA_API_KEY`.
 
 Each release also publishes a `SHA256SUMS` manifest. Every input is pinned in
 [`versions.env`](versions.env) so a rebuild of a tag is reproducible.
