@@ -29,6 +29,10 @@ py="$work/python/bin/python3"
 
 echo "==> SearXNG @ ${SEARXNG_REF}"
 git clone --filter=blob:none --no-checkout https://github.com/searxng/searxng.git "$work/src"
+# Only the `searx/` package + root build files are needed for `pip install .`.
+# Skipping the rest also avoids upstream paths containing ':' (e.g.
+# utils/templates/.../searxng.conf:socket) that Windows/NTFS refuses to check out.
+git -C "$work/src" sparse-checkout set searx
 git -C "$work/src" checkout --detach "$SEARXNG_REF"
 
 echo "==> install into the standalone interpreter (relocatable, no venv)"

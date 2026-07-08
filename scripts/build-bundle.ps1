@@ -26,6 +26,9 @@ $py = "$work\python\python.exe"
 
 Write-Host "==> SearXNG @ $($env:SEARXNG_REF)"
 git clone --filter=blob:none --no-checkout https://github.com/searxng/searxng.git "$work\src"; Assert-Ok "clone searxng"
+# Only searx/ + root build files are needed for `pip install .`; skipping the rest
+# also avoids upstream paths with ':' that NTFS refuses to check out.
+git -C "$work\src" sparse-checkout set searx; Assert-Ok "sparse-checkout"
 git -C "$work\src" checkout --detach $env:SEARXNG_REF; Assert-Ok "checkout searxng ref"
 
 Write-Host "==> install into the standalone interpreter"
