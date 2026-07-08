@@ -1,0 +1,7 @@
+/dist/
+/work/
+*.tar.zst
+*.tar.gz
+*.zip
+__pycache__/
+*.pyc

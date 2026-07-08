@@ -1,0 +1,128 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*.*.*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version tag to release (e.g. v0.1.0)'
+        required: true
+        type: string
+
+jobs:
+  # Fail fast if the git tag and versions.env disagree, so a release never ships
+  # a bundle whose embedded version lies about what it is.
+  verify-version:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compare tag to versions.env
+        run: |
+          set -euo pipefail
+          TAG="${{ github.event.inputs.version || github.ref_name }}"
+          . ./versions.env
+          echo "tag: $TAG / versions.env BUNDLE_VERSION: $BUNDLE_VERSION"
+          [ "$TAG" = "$BUNDLE_VERSION" ] || { echo "::error::tag $TAG != BUNDLE_VERSION $BUNDLE_VERSION"; exit 1; }
+
+  # One native runner per target — no QEMU/cross: each platform pip-installs its
+  # own native wheels.
+  build:
+    needs: [verify-version]
+    name: bundle ${{ matrix.target }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { target: linux-x86_64,   os: ubuntu-latest,    pbs: x86_64-unknown-linux-gnu,  win: false }
+          - { target: linux-aarch64,  os: ubuntu-24.04-arm, pbs: aarch64-unknown-linux-gnu, win: false }
+          - { target: macos-x86_64,   os: macos-13,         pbs: x86_64-apple-darwin,       win: false }
+          - { target: macos-aarch64,  os: macos-14,         pbs: aarch64-apple-darwin,      win: false }
+          - { target: windows-x86_64, os: windows-latest,   pbs: x86_64-pc-windows-msvc,    win: true }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Ensure zstd (unix)
+        if: ${{ !matrix.win }}
+        shell: bash
+        run: |
+          if command -v zstd >/dev/null 2>&1; then echo "zstd present";
+          elif [ "${{ runner.os }}" = "macOS" ]; then brew install zstd;
+          else sudo apt-get update && sudo apt-get install -y zstd; fi
+      - name: Build bundle (unix)
+        if: ${{ !matrix.win }}
+        shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
+          PBS_TRIPLE: ${{ matrix.pbs }}
+        run: bash scripts/build-bundle.sh
+      - name: Build bundle (windows)
+        if: ${{ matrix.win }}
+        shell: pwsh
+        run: pwsh scripts/build-bundle.ps1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bundle-${{ matrix.target }}
+          path: dist/mermaid-searxng-*
+
+  publish:
+    needs: [build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: Collect artifacts + SHA256SUMS
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          find artifacts -type f -name 'mermaid-searxng-*' -exec cp {} dist/ \;
+          cd dist
+          sha256sum mermaid-searxng-* | sort -k2 > SHA256SUMS
+          echo "--- SHA256SUMS ---"; cat SHA256SUMS
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.version || github.ref_name }}
+          files: |
+            dist/mermaid-searxng-*
+            dist/SHA256SUMS
+          generate_release_notes: true
+
+  # Bump the pinned bundle version in noahsabaj/mermaid-cli via an automated PR —
+  # the analog of mermaid-cli's own brew/scoop/winget bumps. No-op until
+  # BUMP_TOKEN (a PAT with contents:write + pull-requests:write on mermaid-cli) is
+  # set and the first version is pinned by hand. Wired to mermaid-cli's
+  # scripts/bump_searxng_bundle.py once that lands.
+  bump-mermaid-cli:
+    needs: [publish]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Gate on BUMP_TOKEN
+        id: gate
+        env:
+          BUMP_TOKEN: ${{ secrets.BUMP_TOKEN }}
+        run: |
+          if [ -n "${BUMP_TOKEN:-}" ]; then echo "enabled=true" >> "$GITHUB_OUTPUT";
+          else echo "BUMP_TOKEN not set — skipping mermaid-cli bump."; echo "enabled=false" >> "$GITHUB_OUTPUT"; fi
+      - name: Open bump PR against mermaid-cli
+        if: steps.gate.outputs.enabled == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.BUMP_TOKEN }}
+          TAG: ${{ github.event.inputs.version || github.ref_name }}
+        run: |
+          set -euo pipefail
+          gh repo clone noahsabaj/mermaid-cli cli -- --depth 1
+          curl -fsSL -o "$RUNNER_TEMP/SHA256SUMS" \
+            "https://github.com/noahsabaj/mermaid-searxng/releases/download/${TAG}/SHA256SUMS"
+          cd cli
+          python3 scripts/bump_searxng_bundle.py "$TAG" "$RUNNER_TEMP/SHA256SUMS"
+          git checkout -b "bump-searxng-bundle-${TAG}"
+          git -c user.name=github-actions[bot] \
+              -c user.email=41898282+github-actions[bot]@users.noreply.github.com \
+              commit -am "chore(searxng): pin bundle ${TAG}"
+          git push -u origin "bump-searxng-bundle-${TAG}"
+          gh pr create --repo noahsabaj/mermaid-cli --base main \
+            --title "chore(searxng): pin bundle ${TAG}" \
+            --body "Automated bundle version + checksum bump to \`${TAG}\`."
