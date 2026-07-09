@@ -10,6 +10,12 @@ on:
         required: true
         type: string
 
+# One release per ref at a time: a re-tag cancels the in-flight run so old and
+# new runs don't pile up competing for the (limited) macOS/ARM runners.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   # Fail fast if the git tag and versions.env disagree, so a release never ships
   # a bundle whose embedded version lies about what it is.
