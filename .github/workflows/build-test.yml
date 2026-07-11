@@ -1,0 +1,46 @@
+name: Build test
+
+# Manually build one target without releasing anything — for validating a
+# risky leg (a new platform, a toolchain change) before it gates a real tag.
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: 'Target to build'
+        required: true
+        type: choice
+        options:
+          - linux-x86_64
+          - linux-aarch64
+          - macos-aarch64
+          - macos-x86_64
+
+jobs:
+  build:
+    name: test-build ${{ inputs.target }}
+    runs-on: ${{ fromJSON('{"linux-x86_64":"ubuntu-latest","linux-aarch64":"ubuntu-24.04-arm","macos-aarch64":"macos-14","macos-x86_64":"macos-14"}')[inputs.target] }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - name: Ensure zstd + GNU tar
+        shell: bash
+        run: |
+          if [ "${{ runner.os }}" = "macOS" ]; then
+            command -v zstd >/dev/null 2>&1 || brew install zstd
+            command -v gtar >/dev/null 2>&1 || brew install gnu-tar
+          else
+            command -v zstd >/dev/null 2>&1 || { sudo apt-get update && sudo apt-get install -y zstd; }
+          fi
+      - name: Ensure Rosetta 2 (x86_64 interpreter on the arm runner)
+        if: inputs.target == 'macos-x86_64'
+        run: sudo softwareupdate --install-rosetta --agree-to-license
+      - name: Build bundle
+        shell: bash
+        env:
+          TARGET: ${{ inputs.target }}
+          PBS_TRIPLE: ${{ fromJSON('{"linux-x86_64":"x86_64-unknown-linux-gnu","linux-aarch64":"aarch64-unknown-linux-gnu","macos-aarch64":"aarch64-apple-darwin","macos-x86_64":"x86_64-apple-darwin"}')[inputs.target] }}
+        run: bash scripts/build-bundle.sh
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: test-bundle-${{ inputs.target }}
+          path: dist/mermaid-searxng-*
+          retention-days: 7

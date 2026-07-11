@@ -101,6 +101,22 @@ rm -f "$work/python/bin"/python3*-config
 # direct_url.json embeds the build path.
 find "$pylib/site-packages" -name 'direct_url.json' -delete 2>/dev/null || true
 find "$work/python" -name '*.a' -delete 2>/dev/null || true
+# Drop RECORD lines for files the prune removed: the deleted console scripts'
+# entries carry hashes of shebangs that embedded the build path, which was the
+# last machine-dependent byte in the tree. With them gone, the same tree built
+# under any root path is byte-identical (toolchain versions being equal).
+"$py" -B - "$pylib/site-packages" <<'PY'
+import csv, io, pathlib, sys
+
+site = pathlib.Path(sys.argv[1])
+for record in sorted(site.glob('*.dist-info/RECORD')):
+    rows = list(csv.reader(io.StringIO(record.read_text())))
+    kept = [r for r in rows if r and (site / r[0]).resolve().exists()]
+    if len(kept) != len(rows):
+        out = io.StringIO()
+        csv.writer(out, lineterminator='\n').writerows(kept)
+        record.write_text(out.getvalue())
+PY
 
 echo "==> smoke test the pruned tree (import + a real granian boot)"
 # No bytecode during the smoke: .pyc files embed source mtimes and which

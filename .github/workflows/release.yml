@@ -33,8 +33,10 @@ jobs:
           echo "tag: $TAG / versions.env BUNDLE_VERSION: $BUNDLE_VERSION"
           [ "$TAG" = "$BUNDLE_VERSION" ] || { echo "::error::tag $TAG != BUNDLE_VERSION $BUNDLE_VERSION"; exit 1; }
 
-  # One native runner per target — no QEMU/cross: each platform pip-installs its
-  # own native wheels.
+  # One runner per target, native wheels only — no compilation happens in the
+  # build, so the lone non-native leg (macos-x86_64, assembled on the arm
+  # runner) just needs Rosetta 2 to run the x86_64 interpreter: GitHub retired
+  # its free Intel-mac runners, and emulation is exactly as good here.
   build:
     needs: [verify-version]
     name: bundle ${{ matrix.target }}
@@ -45,6 +47,7 @@ jobs:
           - { target: linux-x86_64,   os: ubuntu-latest,    pbs: x86_64-unknown-linux-gnu }
           - { target: linux-aarch64,  os: ubuntu-24.04-arm, pbs: aarch64-unknown-linux-gnu }
           - { target: macos-aarch64,  os: macos-14,         pbs: aarch64-apple-darwin }
+          - { target: macos-x86_64,   os: macos-14,         pbs: x86_64-apple-darwin }
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
@@ -57,6 +60,9 @@ jobs:
           else
             command -v zstd >/dev/null 2>&1 || { sudo apt-get update && sudo apt-get install -y zstd; }
           fi
+      - name: Ensure Rosetta 2 (x86_64 interpreter on the arm runner)
+        if: matrix.target == 'macos-x86_64'
+        run: sudo softwareupdate --install-rosetta --agree-to-license
       - name: Build bundle
         shell: bash
         env:
@@ -117,25 +123,41 @@ jobs:
           generate_release_notes: true
 
   # Bump the pinned bundle version in noahsabaj/mermaid-cli via an automated PR —
-  # the analog of mermaid-cli's own brew/scoop/winget bumps. No-op until
-  # BUMP_TOKEN (a PAT with contents:write + pull-requests:write on mermaid-cli) is
-  # set and the first version is pinned by hand. Wired to mermaid-cli's
-  # scripts/bump_searxng_bundle.py once that lands.
+  # the analog of mermaid-cli's own brew/scoop/winget bumps, running
+  # scripts/bump_searxng_bundle.py over the published SHA256SUMS. Credentials, in
+  # preference order (no-op if neither is set):
+  #   1. A GitHub App installed on mermaid-cli (BUMP_APP_ID + BUMP_APP_PRIVATE_KEY
+  #      secrets; needs contents + pull-requests write). Preferred: tokens are
+  #      minted per-run, never expire as a unit, and App-created PRs trigger
+  #      mermaid-cli's CI.
+  #   2. BUMP_TOKEN, a fine-grained PAT with the same permissions (expires; PRs
+  #      also trigger CI).
   bump-mermaid-cli:
     needs: [publish]
     runs-on: ubuntu-latest
     steps:
-      - name: Gate on BUMP_TOKEN
+      - name: Gate on bump credentials
         id: gate
         env:
+          BUMP_APP_ID: ${{ secrets.BUMP_APP_ID }}
           BUMP_TOKEN: ${{ secrets.BUMP_TOKEN }}
         run: |
-          if [ -n "${BUMP_TOKEN:-}" ]; then echo "enabled=true" >> "$GITHUB_OUTPUT";
-          else echo "BUMP_TOKEN not set — skipping mermaid-cli bump."; echo "enabled=false" >> "$GITHUB_OUTPUT"; fi
+          if [ -n "${BUMP_APP_ID:-}" ]; then echo "mode=app" >> "$GITHUB_OUTPUT";
+          elif [ -n "${BUMP_TOKEN:-}" ]; then echo "mode=pat" >> "$GITHUB_OUTPUT";
+          else echo "neither BUMP_APP_ID nor BUMP_TOKEN is set — skipping the mermaid-cli bump."; echo "mode=off" >> "$GITHUB_OUTPUT"; fi
+      - name: Mint an installation token (GitHub App)
+        if: steps.gate.outputs.mode == 'app'
+        id: app
+        uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2.2.2
+        with:
+          app-id: ${{ secrets.BUMP_APP_ID }}
+          private-key: ${{ secrets.BUMP_APP_PRIVATE_KEY }}
+          owner: noahsabaj
+          repositories: mermaid-cli
       - name: Open bump PR against mermaid-cli
-        if: steps.gate.outputs.enabled == 'true'
+        if: steps.gate.outputs.mode != 'off'
         env:
-          GH_TOKEN: ${{ secrets.BUMP_TOKEN }}
+          GH_TOKEN: ${{ steps.app.outputs.token || secrets.BUMP_TOKEN }}
           TAG: ${{ github.event.inputs.version || github.ref_name }}
         run: |
           set -euo pipefail
