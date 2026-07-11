@@ -33,30 +33,42 @@ GitHub's macos-13 runners are too scarce to build reliably). Those users point
 `search_backend = "searxng"` at their own `searxng_url` (a WSL, Linux, or remote
 instance), or set `OLLAMA_API_KEY`.
 
-Each release also publishes a `SHA256SUMS` manifest. Every input is pinned in
-[`versions.env`](versions.env) so a rebuild of a tag is reproducible.
+Each release also publishes a `SHA256SUMS` manifest.
+
+## Reproducibility
+
+Rebuilding a tag yields a byte-identical bundle (given the same runner image),
+and CI enforces it: the `repro-check` job builds `linux-x86_64` twice and fails
+the release on any difference. The inputs that make this hold:
+
+- **CPython**: exact python-build-standalone asset, sha256-verified against the
+  per-triple pins in [`versions.env`](versions.env).
+- **SearXNG**: fetched via git at an exact commit — the hash *is* the content
+  pin, verified by git itself.
+- **Python deps**: installed with `pip --require-hashes` from
+  [`requirements.lock`](requirements.lock), a universal (cross-platform) lock
+  covering every transitive dependency. Regenerate it with
+  `scripts/update-lock.sh` (needs [uv](https://docs.astral.sh/uv/)) after
+  bumping `SEARXNG_REF` or `GRANIAN_VERSION`.
+- **Timestamps & metadata**: wheel builds and tar mtimes are clamped to the
+  `SOURCE_DATE_EPOCH` pin, and the tarball is packed with GNU tar's
+  deterministic flags (`--sort=name`, fixed owner/group).
 
 ## Build locally
 
 ```sh
-# unix (reads pins from versions.env)
+# reads pins from versions.env; needs GNU tar (macOS: brew install gnu-tar)
 TARGET=linux-x86_64 PBS_TRIPLE=x86_64-unknown-linux-gnu bash scripts/build-bundle.sh
 # -> dist/mermaid-searxng-linux-x86_64.tar.zst
-```
-
-```powershell
-# windows
-pwsh scripts/build-bundle.ps1
-# -> dist\mermaid-searxng-windows-x86_64.zip
 ```
 
 ## Releasing
 
 Push a `vX.Y.Z` tag matching `BUNDLE_VERSION` in `versions.env`. CI builds all
-five targets on native runners, generates `SHA256SUMS`, publishes a GitHub
-Release, and (once `BUMP_TOKEN` is set) opens a PR against `mermaid-cli` pinning
-the new version + checksums — the same muscle as mermaid's brew/scoop/winget
-bumps.
+three targets on native runners, verifies reproducibility, generates
+`SHA256SUMS`, publishes a GitHub Release, and (once `BUMP_TOKEN` is set) opens a
+PR against `mermaid-cli` pinning the new version + checksums — the same muscle
+as mermaid's brew/scoop/winget bumps.
 
 ## License
 

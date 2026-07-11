@@ -22,11 +22,13 @@ jobs:
   verify-version:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
       - name: Compare tag to versions.env
         run: |
           set -euo pipefail
           TAG="${{ github.event.inputs.version || github.ref_name }}"
+          echo "$TAG" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$' \
+            || { echo "::error::version '$TAG' is not of the form vX.Y.Z"; exit 1; }
           . ./versions.env
           echo "tag: $TAG / versions.env BUNDLE_VERSION: $BUNDLE_VERSION"
           [ "$TAG" = "$BUNDLE_VERSION" ] || { echo "::error::tag $TAG != BUNDLE_VERSION $BUNDLE_VERSION"; exit 1; }
@@ -40,37 +42,62 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { target: linux-x86_64,   os: ubuntu-latest,    pbs: x86_64-unknown-linux-gnu,  win: false }
-          - { target: linux-aarch64,  os: ubuntu-24.04-arm, pbs: aarch64-unknown-linux-gnu, win: false }
-          - { target: macos-aarch64,  os: macos-14,         pbs: aarch64-apple-darwin,      win: false }
+          - { target: linux-x86_64,   os: ubuntu-latest,    pbs: x86_64-unknown-linux-gnu }
+          - { target: linux-aarch64,  os: ubuntu-24.04-arm, pbs: aarch64-unknown-linux-gnu }
+          - { target: macos-aarch64,  os: macos-14,         pbs: aarch64-apple-darwin }
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
-      - name: Ensure zstd (unix)
-        if: ${{ !matrix.win }}
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - name: Ensure zstd + GNU tar
         shell: bash
         run: |
-          if command -v zstd >/dev/null 2>&1; then echo "zstd present";
-          elif [ "${{ runner.os }}" = "macOS" ]; then brew install zstd;
-          else sudo apt-get update && sudo apt-get install -y zstd; fi
+          if [ "${{ runner.os }}" = "macOS" ]; then
+            command -v zstd >/dev/null 2>&1 || brew install zstd
+            command -v gtar >/dev/null 2>&1 || brew install gnu-tar
+          else
+            command -v zstd >/dev/null 2>&1 || { sudo apt-get update && sudo apt-get install -y zstd; }
+          fi
       - name: Build bundle
         shell: bash
         env:
           TARGET: ${{ matrix.target }}
           PBS_TRIPLE: ${{ matrix.pbs }}
         run: bash scripts/build-bundle.sh
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: bundle-${{ matrix.target }}
           path: dist/mermaid-searxng-*
 
+  # Build the linux-x86_64 bundle twice and require byte-identical output, so a
+  # reproducibility regression (floating dep, unclamped timestamp, unstable tar
+  # ordering) blocks the release instead of silently changing the artifact.
+  repro-check:
+    needs: [verify-version]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - name: Ensure zstd
+        run: command -v zstd >/dev/null 2>&1 || { sudo apt-get update && sudo apt-get install -y zstd; }
+      - name: Build twice and compare
+        env:
+          TARGET: linux-x86_64
+          PBS_TRIPLE: x86_64-unknown-linux-gnu
+        run: |
+          set -euo pipefail
+          bash scripts/build-bundle.sh
+          mv dist/mermaid-searxng-linux-x86_64.tar.zst first.tar.zst
+          bash scripts/build-bundle.sh
+          sha256sum first.tar.zst dist/mermaid-searxng-linux-x86_64.tar.zst
+          cmp first.tar.zst dist/mermaid-searxng-linux-x86_64.tar.zst \
+            || { echo "::error::rebuild produced a different artifact — reproducibility regression"; exit 1; }
+
   publish:
-    needs: [build]
+    needs: [build, repro-check]
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           path: artifacts
       - name: Collect artifacts + SHA256SUMS
@@ -81,7 +108,7 @@ jobs:
           cd dist
           sha256sum mermaid-searxng-* | sort -k2 > SHA256SUMS
           echo "--- SHA256SUMS ---"; cat SHA256SUMS
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
         with:
           tag_name: ${{ github.event.inputs.version || github.ref_name }}
           files: |
@@ -112,6 +139,9 @@ jobs:
           TAG: ${{ github.event.inputs.version || github.ref_name }}
         run: |
           set -euo pipefail
+          # Make git push authenticate through gh (git ignores GH_TOKEN, and
+          # `gh repo clone` does not configure a credential helper on its own).
+          gh auth setup-git
           gh repo clone noahsabaj/mermaid-cli cli -- --depth 1
           curl -fsSL -o "$RUNNER_TEMP/SHA256SUMS" \
             "https://github.com/noahsabaj/mermaid-searxng/releases/download/${TAG}/SHA256SUMS"
