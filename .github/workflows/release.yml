@@ -174,6 +174,9 @@ jobs:
               -c user.email=41898282+github-actions[bot]@users.noreply.github.com \
               commit -am "chore(searxng): pin bundle ${TAG}"
           git push -u origin "bump-searxng-bundle-${TAG}"
+          # --head is required: with --repo, gh does not infer the head branch
+          # from the local checkout (learned on the first live run).
           gh pr create --repo noahsabaj/mermaid-cli --base main \
+            --head "bump-searxng-bundle-${TAG}" \
             --title "chore(searxng): pin bundle ${TAG}" \
             --body "Automated bundle version + checksum bump to \`${TAG}\`."
