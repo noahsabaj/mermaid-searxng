@@ -89,7 +89,10 @@ git init -q "$work/src"
 git -C "$work/src" config core.autocrlf false
 if [ "$windows" = 1 ]; then
   # A few deployment templates under utils/ have ':' in their names, which
-  # Windows cannot create. Nothing under utils/ is packaged, so leave it out.
+  # Windows cannot create. Nothing under utils/ is packaged, so leave it out of
+  # the worktree, and let the index hold those names (protectNTFS rejects them
+  # even for paths the sparse checkout never writes).
+  git -C "$work/src" config core.protectNTFS false
   git -C "$work/src" config core.sparseCheckout true
   printf '/*\n!/utils/\n' > "$work/src/.git/info/sparse-checkout"
 fi
