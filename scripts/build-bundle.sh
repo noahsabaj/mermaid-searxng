@@ -87,6 +87,12 @@ git init -q "$work/src"
 # The source bytes must not depend on the runner's git config (Windows runners
 # default to core.autocrlf=true).
 git -C "$work/src" config core.autocrlf false
+if [ "$windows" = 1 ]; then
+  # A few deployment templates under utils/ have ':' in their names, which
+  # Windows cannot create. Nothing under utils/ is packaged, so leave it out.
+  git -C "$work/src" config core.sparseCheckout true
+  printf '/*\n!/utils/\n' > "$work/src/.git/info/sparse-checkout"
+fi
 git -C "$work/src" fetch -q --depth 1 https://github.com/searxng/searxng "$SEARXNG_REF"
 git -C "$work/src" checkout -q FETCH_HEAD
 
