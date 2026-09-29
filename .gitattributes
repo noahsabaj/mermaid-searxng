@@ -1,0 +1,3 @@
+# Scripts and pins are read by bash (Git Bash on the Windows build leg), which
+# chokes on CRLF: keep LF everywhere regardless of the checkout platform.
+* text=auto eol=lf
