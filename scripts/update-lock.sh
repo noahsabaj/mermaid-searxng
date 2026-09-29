@@ -28,8 +28,8 @@ curl -fsSL -o "$work/requirements.in" \
 } >> "$work/requirements.in"
 
 echo "==> uv pip compile --universal --generate-hashes"
-# --universal resolves for every platform at once (one lock for the linux and
-# macos build legs); --python-version targets the bundled interpreter, not
+# --universal resolves for every platform at once (one lock for the linux,
+# macos and windows build legs); --python-version targets the bundled interpreter, not
 # whatever python runs this script. Run from $work with a relative input path
 # so the lock's "via" annotations don't embed a random temp dir.
 (cd "$work" && uv pip compile --universal --generate-hashes \

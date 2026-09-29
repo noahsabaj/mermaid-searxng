@@ -15,6 +15,8 @@ for the host platform, unpacks it under its data dir, and runs:
     --host 127.0.0.1 --port <port> searx.webapp:application
 ```
 
+(`<bundle>\python\python.exe` on Windows.)
+
 bound to loopback, with `SEARXNG_SETTINGS_PATH` pointing at mermaid's generated
 `settings.yml` (JSON API on, bot limiter off, Valkey off). **No Docker, no
 Podman, no VM.**
@@ -27,16 +29,20 @@ Podman, no VM.**
 | linux-aarch64 | `ubuntu-24.04-arm` | `mermaid-searxng-linux-aarch64.tar.zst` |
 | macos-aarch64 | `macos-14` | `mermaid-searxng-macos-aarch64.tar.zst` |
 | macos-x86_64 | `macos-14` (Rosetta 2) | `mermaid-searxng-macos-x86_64.tar.zst` |
+| windows-x86_64 | `windows-latest` | `mermaid-searxng-windows-x86_64.tar.zst` |
 
 The Intel-mac bundle is assembled on the arm runner: nothing in the build
 compiles (all deps are wheels), so Rosetta 2 running the x86_64 interpreter for
 pip and the smoke test is exactly as good as native — GitHub retired its free
 Intel-mac runners.
 
-No bundle is published for **Windows** (SearXNG imports Unix-only modules like
-`pwd`, so it can't run on native Windows). Windows users point
-`search_backend = "searxng"` at their own `searxng_url` (a WSL, Linux, or remote
-instance), or set `OLLAMA_API_KEY`.
+The **Windows** bundle is built under Git Bash on the Windows runner. SearXNG
+has exactly one Unix-only import: `searx/valkeydb.py` imports `pwd` at module
+level, only to log the user name when a configured Valkey is unreachable.
+mermaid always runs with Valkey off, so the Windows build makes that import
+optional (a one-line patch applied by `scripts/build-bundle.sh`, which fails the
+build if a SearXNG bump moves the line). Every other target ships SearXNG
+unmodified.
 
 Each release also publishes a `SHA256SUMS` manifest.
 
@@ -75,7 +81,7 @@ TARGET=linux-x86_64 PBS_TRIPLE=x86_64-unknown-linux-gnu bash scripts/build-bundl
 ## Releasing
 
 Push a `vX.Y.Z` tag matching `BUNDLE_VERSION` in `versions.env`. CI builds all
-four targets, verifies reproducibility, generates `SHA256SUMS`, publishes a
+five targets, verifies reproducibility, generates `SHA256SUMS`, publishes a
 GitHub Release, and opens a PR against `mermaid-cli` pinning the new version +
 checksums — the same muscle as mermaid's brew/scoop/winget bumps. To validate a
 risky leg without releasing, run the **Build test** workflow (`workflow_dispatch`)
@@ -100,4 +106,5 @@ with a notice.
 ## License
 
 MIT OR Apache-2.0, matching mermaid-cli. SearXNG is AGPL-3.0; bundles redistribute
-it unmodified under that license.
+it under that license, unmodified except for the Windows `pwd` import patch
+described above (its source is `scripts/build-bundle.sh` in this repository).

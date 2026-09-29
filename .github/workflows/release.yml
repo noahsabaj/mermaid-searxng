@@ -48,6 +48,7 @@ jobs:
           - { target: linux-aarch64,  os: ubuntu-24.04-arm, pbs: aarch64-unknown-linux-gnu }
           - { target: macos-aarch64,  os: macos-14,         pbs: aarch64-apple-darwin }
           - { target: macos-x86_64,   os: macos-14,         pbs: x86_64-apple-darwin }
+          - { target: windows-x86_64, os: windows-latest,   pbs: x86_64-pc-windows-msvc }
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
@@ -57,6 +58,9 @@ jobs:
           if [ "${{ runner.os }}" = "macOS" ]; then
             command -v zstd >/dev/null 2>&1 || brew install zstd
             command -v gtar >/dev/null 2>&1 || brew install gnu-tar
+          elif [ "${{ runner.os }}" = "Windows" ]; then
+            # Git Bash ships GNU tar; zstd comes from Chocolatey if the image lacks it.
+            command -v zstd >/dev/null 2>&1 || choco install zstandard -y --no-progress
           else
             command -v zstd >/dev/null 2>&1 || { sudo apt-get update && sudo apt-get install -y zstd; }
           fi
